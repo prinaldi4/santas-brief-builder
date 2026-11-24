@@ -1,0 +1,1609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Santa’s Brief Builder</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rancho&display=swap" rel="stylesheet">
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #05070f; overflow: hidden;
+               font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; color: #fff; }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  /* Stage keeps a locked 16:9 ratio and fills as much screen as possible */
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    overflow: hidden;
+    background: #0d1b2a;
+    --u: 10px; /* 1% of stage width - set by JS, used for responsive overlay text */
+  }
+  canvas, video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  video { object-fit: cover; background: #000; }
+
+  #stage canvas { cursor: none; }
+
+  /* ---------- Game over ---------- */
+  #overLayer { background: rgba(4, 8, 20, .9); }
+  #overTitle { font-size: calc(var(--u) * 5.4); max-width: calc(var(--u) * 82);
+               line-height: 1.12; }
+  #overSub { font-size: calc(var(--u) * 1.9); }
+  #overSub b { color: #ffd84d; font-size: calc(var(--u) * 2.4); }
+
+  #recapLine { color: #ffd84d; font-weight: bold; font-size: calc(var(--u) * 1.9); }
+  #recap {
+    width: min(calc(var(--u) * 74), 94%);
+    max-height: calc(var(--u) * 18);     /* taller = less room for the button; see note */
+    flex: 0 1 auto; min-height: 0;
+    overflow-y: auto; overscroll-behavior: contain;
+    text-align: left; padding-right: calc(var(--u) * 1.2);
+  }
+  .rcItem { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16);
+            border-left: calc(var(--u)*.35) solid #c62828;
+            border-radius: calc(var(--u)*.8);
+            padding: calc(var(--u)*1) calc(var(--u)*1.4);
+            margin-bottom: calc(var(--u)*.9); }
+  .rcNo { font-size: calc(var(--u)*.95); letter-spacing: .18em; color: #ffd84d; font-weight: bold; }
+  .rcPrompt { font-size: calc(var(--u)*1.25); font-style: italic; line-height: 1.35;
+              margin: calc(var(--u)*.35) 0 calc(var(--u)*.6); }
+  .rcLbl { font-size: calc(var(--u)*.9); letter-spacing: .16em; text-transform: uppercase;
+           color: #9fd3a2; font-weight: bold; }
+  .rcResp { font-size: calc(var(--u)*1.2); line-height: 1.4; margin-top: calc(var(--u)*.2);
+            white-space: pre-wrap; word-break: break-word; }
+  .rcResp.empty { opacity: .5; font-style: italic; }
+  #recap::-webkit-scrollbar { width: calc(var(--u)*.7); }
+  #recap::-webkit-scrollbar-track { background: rgba(255,255,255,.06); border-radius: 999px; }
+  #recap::-webkit-scrollbar-thumb { background: rgba(255,255,255,.28); border-radius: 999px; }
+
+  .layer {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: calc(var(--u) * 1.1);
+    background: rgba(4, 8, 20, .82); backdrop-filter: blur(4px);
+    padding: calc(var(--u) * 4);
+  }
+  .layer.hidden, .hidden { display: none !important; }
+
+  h1 { font-family: "Rancho", cursive; font-weight: 400;
+       font-size: calc(var(--u) * 8.5); color: #ffd84d; letter-spacing: .01em;
+       line-height: 1.05;
+       /*text-shadow: 0 calc(var(--u)*.4) 0 #8d1b1b, 0 calc(var(--u)*1) calc(var(--u)*2) rgba(0,0,0,.6); */}
+  h2 { font-size: calc(var(--u) * 2.6); color: #ffd84d; }
+  .sub { font-size: calc(var(--u) * 1.6); opacity: .9; max-width: calc(var(--u) * 70); line-height: 1.5; }
+
+  /* ---------- Title intro + icon row ---------- */
+  .intro { display: flex; flex-direction: column; align-items: center;
+           gap: calc(var(--u) * 1.4); }
+
+  .iconrow { display: flex; justify-content: center; align-items: flex-start;
+             gap: calc(var(--u) * 2.4); margin: calc(var(--u) * .4) 0; }
+  .iconrow .it { display: flex; flex-direction: column; align-items: center;
+                 gap: calc(var(--u) * .55); width: calc(var(--u) * 9); }
+  .iconrow .art {
+    width: calc(var(--u) * 5.4); height: calc(var(--u) * 5.4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: calc(var(--u) * 3.6); line-height: 1;
+    background-repeat: no-repeat; background-position: left center;
+    filter: drop-shadow(0 calc(var(--u)*.3) calc(var(--u)*.6) rgba(0,0,0,.5));
+    animation: bob 2.6s ease-in-out infinite;
+  }
+  .iconrow .it:nth-child(2) .art { animation-delay: .22s; }
+  .iconrow .it:nth-child(3) .art { animation-delay: .44s; }
+  .iconrow .it:nth-child(4) .art { animation-delay: .66s; }
+  .iconrow .it:nth-child(5) .art { animation-delay: .88s; }
+  @keyframes bob { 0%,100% { transform: translateY(0); }
+                   50% { transform: translateY(calc(var(--u) * -.55)); } }
+  .iconrow .lbl { font-size: calc(var(--u) * 1.05); font-weight: bold;
+                  letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+
+  button {
+    cursor: pointer; border: none; border-radius: 999px; font-weight: bold; color: #fff;
+    background: #c62828; box-shadow: 0 calc(var(--u)*.4) 0 #7f1414;
+    padding: calc(var(--u) * 1.2) calc(var(--u) * 3.4); font-size: calc(var(--u) * 1.8);
+    transition: transform .08s; font-family: inherit;
+  }
+  button:active { transform: translateY(calc(var(--u)*.3)); box-shadow: none; }
+  button.ghost { background: rgba(255,255,255,.12); box-shadow: none;
+                 border: 1px solid rgba(255,255,255,.35); font-size: calc(var(--u)*1.3);
+                 padding: calc(var(--u)*.9) calc(var(--u)*2.2); }
+
+/* ---------- Quit confirmation popup ---------- */
+  .confirmBox {
+    background: linear-gradient(170deg, #11203a, #0b1526);
+    border: 1px solid rgba(255,255,255,.18);
+    border-top: calc(var(--u) * .6) solid #c62828;
+    border-radius: calc(var(--u) * 1.4);
+    padding: calc(var(--u) * 3.4) calc(var(--u) * 4);
+    box-shadow: 0 calc(var(--u)*1.6) calc(var(--u)*4) rgba(0,0,0,.6);
+    display: flex; flex-direction: column; align-items: center;
+    gap: calc(var(--u) * 1.6); max-width: calc(var(--u) * 60);
+  }
+  .confirmBox h2 { font-size: calc(var(--u) * 3); line-height: 1.15; }
+  .confirmBtns { display: flex; gap: calc(var(--u) * 1.6); margin-top: calc(var(--u) * .6); }
+
+/* ---------- In-game exit button ---------- */
+  #exitBtn {
+    position: absolute; z-index: 5;
+    top: 2.4%; right: 2.2%; height: 8.5%;
+    display: flex; align-items: center; gap: calc(var(--u) * .55);
+    padding: 0 calc(var(--u) * 1.5);
+    background: rgba(0,0,0,.52); border: 2px solid rgba(255,255,255,.35);
+    border-radius: calc(var(--u) * .85); box-shadow: none; color: rgba(255,255,255,.9);
+    font-size: calc(var(--u) * 1.15); font-weight: bold; letter-spacing: .12em;
+    text-transform: uppercase; white-space: nowrap; cursor: pointer;
+  }
+  #exitBtn .x { font-size: calc(var(--u) * 1.55); letter-spacing: 0; line-height: 1; }
+  #exitBtn:hover { background: rgba(198,40,40,.9); border-color: #fff; color: #fff; }
+  #exitBtn:active { transform: none; }
+
+  /* ---------- Intro video ---------- */
+  #videoLayer { background: #000; padding: 0; }
+  #skipBtn { position: absolute; bottom: calc(var(--u)*3); right: calc(var(--u)*3); z-index: 3; }
+  #gateBtn { position: absolute; z-index: 4;
+             background: #377231; box-shadow: 0 calc(var(--u)*.4) 0 #1f4a1b; }
+
+  /* ---------- Title ---------- */
+  .howto { display: grid; grid-template-columns: repeat(3, calc(var(--u) * 22));
+           gap: calc(var(--u) * 2); justify-content: center;
+           margin-top: calc(var(--u) * 1); }
+  .card { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.18);
+          border-radius: calc(var(--u) * 1.2); padding: calc(var(--u) * 1.6) calc(var(--u) * 2); }
+
+  /* Full-width banner card */
+  .card.wide { grid-column: 1 / -1; display: none; align-items: center;
+               gap: calc(var(--u) * 2); text-align: center;
+               padding: calc(var(--u) * 1.4) calc(var(--u) * 3); }
+  .card.wide .ico { font-size: calc(var(--u) * 3.6); flex: 0 0 auto; }
+  .card.wide .txt { flex: 1; }
+  .card.wide .t { margin: 0 0 calc(var(--u)*.3); }
+  .card.wide .d { font-size: calc(var(--u) * 1.3); }
+  .card .ico { font-size: calc(var(--u) * 3); }
+  .card .t { font-size: calc(var(--u) * 1.5); color: #ffd84d; font-weight: bold;
+             margin: calc(var(--u)*.6) 0 calc(var(--u)*.3); }
+  .card .d { font-size: calc(var(--u) * 1.15); opacity: .85; line-height: 1.45; }
+  .keys { font-size: calc(var(--u) * 1.2); opacity: .6; }
+
+  /* ---------- Score rewards row ---------- */
+.rewardtitle, .rewardrow, #rewardNote { display: none; }
+  .rewardtitle { font-size: calc(var(--u) * 1.5); color: #ffd84d; font-weight: bold;
+                 letter-spacing: .06em; margin-top: calc(var(--u) * .6); }
+  .rewardrow { display: flex; justify-content: center; align-items: stretch;
+               gap: calc(var(--u) * .9); }
+  .rewardrow .rw {
+    flex: 0 0 calc(var(--u) * 13); display: flex; flex-direction: column;
+    align-items: center; gap: calc(var(--u) * .25);
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.18);
+    border-top: calc(var(--u) * .3) solid var(--c);
+    border-radius: calc(var(--u) * 1); padding: calc(var(--u)*.7) calc(var(--u)*.5);
+  }
+  .rewardrow .at { font-size: calc(var(--u) * 1.05); font-weight: bold;
+                   letter-spacing: .1em; color: var(--c); }
+  .rewardrow .ic { font-size: calc(var(--u) * 2.1); line-height: 1; }
+  .rewardrow .nm { font-size: calc(var(--u) * .98); font-weight: bold;
+                   text-transform: uppercase; letter-spacing: .05em; }
+  .rewardrow .ds { font-size: calc(var(--u) * .92); opacity: .8; line-height: 1.3; display: none;}
+  
+  /* ---------- Title screen logo ---------- */
+  #logo {
+    position: absolute;
+    left: calc(var(--u) * 3);
+    bottom: calc(var(--u) * 3);
+    height: auto;
+    opacity: .5;
+    filter: drop-shadow(0 calc(var(--u)*.3) calc(var(--u)*.7) rgba(0,0,0,.6));
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .card .ico img.cardimg {
+    width: calc(var(--u) * 4.5);
+    height: calc(var(--u) * 4.5);
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+    filter: drop-shadow(0 calc(var(--u)*.3) calc(var(--u)*.6) rgba(0,0,0,.5));
+  }
+
+  /* ---------- Creative brief ---------- */
+  #briefLayer { background: rgba(4, 8, 20, .93); padding: calc(var(--u) * 2); }
+  .brief {
+    width: min(calc(var(--u) * 80), 96%); max-height: 100%; overflow-y: auto;
+    background: linear-gradient(170deg, #fffdf6, #f3ead6);
+    color: #1d1a14; border-radius: calc(var(--u) * 1.2);
+    padding: calc(var(--u) * 2.4) calc(var(--u) * 3.2);
+    box-shadow: 0 calc(var(--u)*1.6) calc(var(--u)*4) rgba(0,0,0,.6);
+    border-top: calc(var(--u) * .75) solid #c62828; text-align: left;
+  }
+  .brief .head { display: flex; justify-content: space-between; align-items: baseline;
+                 border-bottom: 2px dashed #c9bda2; padding-bottom: calc(var(--u)*.8);
+                 margin-bottom: calc(var(--u)*1.3); }
+  .brief .head h2 { color: #c62828; font-size: calc(var(--u) * 2.6); letter-spacing: .04em; }
+  .brief .head span { font-size: calc(var(--u) * 1.05); color: #7a6f58; letter-spacing: .18em; }
+
+  .brief ul { list-style: none; display: grid; grid-template-columns: 1fr 1fr;
+              gap: 0 calc(var(--u) * 2.2); }
+  .brief li { display: flex; align-items: center; gap: calc(var(--u) * .9);
+              font-size: calc(var(--u) * 1.55); padding: calc(var(--u) * .6) 0;
+              border-bottom: 1px solid rgba(0,0,0,.09); }
+  .brief li.full { grid-column: 1 / -1; }
+  .brief li .ic { width: calc(var(--u) * 2.4); text-align: center; font-size: calc(var(--u) * 1.8); }
+  .brief li .k { width: calc(var(--u) * 9.5); font-weight: bold; color: #1b5e20;
+                 text-transform: uppercase; font-size: calc(var(--u) * 1.05); letter-spacing: .08em; }
+  .brief li .v { font-weight: bold; }
+
+  .prompt { margin-top: calc(var(--u) * 1.8); background: #1b5e20; color: #fff;
+            border-radius: calc(var(--u) * .9);
+            padding: calc(var(--u) * 1.7) calc(var(--u) * 2); }
+  .prompt .pl { font-size: calc(var(--u) * 1.05); letter-spacing: .18em;
+                opacity: .75; text-transform: uppercase; }
+  .prompt .pt { font-size: calc(var(--u) * 2.3); line-height: 1.25;
+                margin-top: calc(var(--u)*.6); font-style: italic; }
+
+  .briefBtns { display: flex; gap: calc(var(--u)*1.2); align-items: center;
+               justify-content: space-between; margin-top: calc(var(--u) * 1.8); flex-wrap: wrap; }
+  .briefBtns button { padding: calc(var(--u)*1) calc(var(--u)*2.6); font-size: calc(var(--u)*1.55); }
+  .briefBtns button.ghost { padding: calc(var(--u)*.8) calc(var(--u)*1.8); font-size: calc(var(--u)*1.2); }
+  #timerBtn {
+  /*background: #504643;*/
+  color: #1b5e20;
+  border: 1px solid #a39a84;
+  box-shadow: 0 calc(var(--u)*.3) 0 #a39a84;
+}
+  #timerDisplay { font-size: calc(var(--u) * 2); font-weight: bold; color: #c62828;
+                  font-variant-numeric: tabular-nums; }
+  .brief .foot { font-size: calc(var(--u)*1.35); color: #7a6f58; margin-top: calc(var(--u)*1.2); }
+
+  /* ---------- Pitch input ---------- */
+  .pitchWrap { margin-top: calc(var(--u) * 1.4); }
+  .pitchWrap label { display: block; font-size: calc(var(--u)*1.05); letter-spacing: .18em;
+                     text-transform: uppercase; color: #7a6f58; font-weight: bold;
+                     margin-bottom: calc(var(--u)*.5); }
+  #pitchInput {
+    width: 100%; min-height: calc(var(--u)*6.5); resize: vertical;
+    font-family: inherit; font-size: calc(var(--u)*1.35); line-height: 1.4; color: #1d1a14;
+    background: #fffef9; border: 2px solid #c9bda2; border-radius: calc(var(--u)*.8);
+    padding: calc(var(--u)*.9) calc(var(--u)*1.2);
+  }
+  #pitchInput::placeholder { color: #a99c82; }
+  #pitchInput:focus { outline: none; border-color: #1b5e20;
+                      box-shadow: 0 0 0 calc(var(--u)*.25) rgba(27,94,32,.18); }
+
+  
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game" width="1920" height="1080"></canvas>
+  <button id="exitBtn" class="hidden" title="End the run and see your briefs"><span class="x">✕</span> Exit</button>
+
+  <!-- ===== INTRO VIDEO ===== -->
+  <div id="videoLayer" class="layer">
+    <video id="introVideo" playsinline preload="auto"></video>
+    <button id="gateBtn" class="hidden">▶ Play Intro</button>
+    <button id="skipBtn" class="ghost">Skip ⏭</button>
+  </div>
+
+  <!-- ===== TITLE / INSTRUCTIONS ===== -->
+  <div id="titleLayer" class="layer hidden">
+    <h1>Santa’s Brief Builder</h1>
+      <div class="intro">
+      <p class="sub">Catch <b>Product</b>, <b>Audience</b>, <b>Platform</b>, <b>Tone</b>, and <b>Wildcard</b> items</p>
+      <div id="iconRow" class="iconrow"></div>
+      <p class="sub wide">to unlock a creative brief that gets you thinking fast,<br>having fun, and turning unexpected combinations into fresh ideas.</p>
+    </div>
+    <div class="howto">
+      <div class="card"><div class="ico"><img class="cardimg" src="art/move-santa.png" alt=""></div><div class="t">Move Santa</div>
+        <div class="d">Use <b>← →</b> or <b>A / D</b> to slide Santa left and right.</div></div>
+      <div class="card"><div class="ico"><img class="cardimg" src="art/earn-points.png" alt=""></div><div class="t">Earn Points for <p>Power Ups</p></div>
+        <div class="d">Presents are <b>+1 point</b>. <p>Brief items are <b>+3 points</b>.</p> <p>Golden presents are <b>+5 points</b>.</p></div></div>
+      <div class="card"><div class="ico"><img class="cardimg" src="art/dodge-coal.png" alt=""></div><div class="t">Dodge the Coal</div>
+        <div class="d">Coal is <b>-5 points</b>. <p>Drop <b>10 presents</b> and <p>the game is over.</p></p></div></div>
+      <div class="card wide">
+        <div class="ico">✨</div>
+        <div class="txt">
+          <div class="t">Build the Brief</div>
+          <div class="d">Collect <b>Product, Audience, Platform, Tone &amp; Wildcard</b> items to unlock a one-of-a-kind creative brief prompt that encourages you to think fast, have fun, and turn unexpected combinations into imaginative new ideas.</div>
+        </div>
+      </div>
+    </div>
+    <div class="rewardtitle hidden">Score Rewards</div>
+    <div id="rewardRow" class="rewardrow hidden"></div>
+    <p class="keys hidden" id="rewardNote"></p>
+    <button id="startBtn">Start Game</button>
+    <p class="keys">P = pause · M = mute · Esc = end game</p>
+  </div>
+
+  <!-- ===== CREATIVE BRIEF ===== -->
+<div id="briefLayer" class="layer hidden">
+  <div class="brief">
+    <div class="head">
+      <h2>Creative Brief</h2>
+      <span id="briefNo">NO. 001</span>
+    </div>
+    <ul id="briefList"></ul>
+    <div class="prompt">
+      <div class="pl">The challenge:</div>
+      <div class="pt" id="promptText"></div>
+    </div>
+    <div class="pitchWrap">
+      <label for="pitchInput">Your pitch</label>
+      <textarea id="pitchInput" rows="3" maxlength="600"
+                placeholder="Create a campaign, write a headline, or leave it blank for later. What would you pitch?"></textarea>
+    </div>
+    <div class="briefBtns" style="justify-content:flex-end">
+      <button id="resumeBtn">Keep Playing →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== QUIT CONFIRMATION ===== -->
+  <div id="confirmLayer" class="layer hidden">
+    <div class="confirmBox">
+      <h2>Are you sure you want to quit?</h2>
+      <p class="sub">Your briefs so far will still be waiting on the next screen.</p>
+      <div class="confirmBtns">
+        <button id="cancelQuitBtn" class="ghost">Cancel</button>
+        <button id="confirmQuitBtn">Yes, quit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== GAME OVER ===== -->
+  <div id="overLayer" class="layer hidden">
+    <h1 id="overTitle">Oh no! You missed too <p>many presents!</p></h1>
+    <p class="sub" id="overSub"></p>
+    <p class="sub" id="recapLine"></p>
+    <div id="recap" class="hidden"></div>
+    <button id="playAgainBtn">Play Again</button>
+    <p class="keys">Press Enter to play again</p>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   1 ·  ARTWORK  —  EDIT THIS BLOCK ONLY
+   ----------------------------------------------------------------------------
+   Drop your files in an /art folder beside this HTML and point to them here.
+   Leave "" to fall back to the built-in placeholder drawing.
+
+   ANIMATION: use one horizontal sprite strip of equally sized frames
+   (e.g. 6 frames of 256x256 = one 1536x256 PNG) and set frames + fps.
+   ============================================================================ */
+const ASSETS = {
+
+  /* Full-screen backdrop — 1920x1080 (or 3840x2160 for extra sharpness) */
+  background: { src: "art/Background.png" },                      // e.g. "art/background.png"
+
+  /* Foreground overlay — drawn in front of items and Santa, behind the HUD.
+     1920x1080 PNG with alpha. Leave "" for none.
+     parallax = px of horizontal drift at full stick deflection (0 = locked). */
+  foreground: { src: "art/Hills_Foreground.png", parallax: 0 },
+
+  /* The player. flip:true mirrors the art when moving left. ~600x560 recommended */
+  santa:     { src: "art/Santa_RunCycle.png", frames: 6, fps: 8, flip: true },
+  santaIdle: { src: "art/Santa_Standing.png",             frames: 1, fps: 1, flip: true },
+  santaFrozen: { src: "art/Santa_Frozen.png", frames: 1, fps: 1, flip: true },
+
+  /* Ordinary presents (+1). Add as many as you like — one is picked at random. */
+  presents: [
+    { src: "art/present-red.png" },                                // e.g. "art/present-red.png"
+    { src: "art/present-blue.png" },                                // e.g. "art/present-blue.png"
+    { src: "art/present-green.png" }                                 // e.g. "art/present-green.png"
+  ],
+
+  /* Golden "Big Idea" bonus (+5) */
+  gold: { src: "art/big-idea.png", frames: 1, fps: 10 },        // e.g. "art/big-idea.png"
+
+  /* Coal / bad brief (-5) */
+  coal: { src: "art/coal.png" },                            // e.g. "art/coal.png"
+
+  /* Frozen present — freezes Santa for a couple seconds */
+  frozenPresent: { src: "art/present-frozen.png" },
+
+  /* Sugar rush present — gives Santa super speed */
+  sugarPresent: { src: "art/present-sugar.png" },
+
+  /* The five brief ingredients — each gets its own art file */
+  marketing: {
+    product:  { src: "", frames: 1, fps: 8 },   // e.g. "art/icon-product.png"
+    audience: { src: "", frames: 1, fps: 8 },   // e.g. "art/icon-audience.png"
+    platform: { src: "", frames: 1, fps: 8 },   // e.g. "art/icon-platform.png"
+    tone:     { src: "", frames: 1, fps: 8 },   // e.g. "art/icon-tone.png"
+    wildcard: { src: "", frames: 1, fps: 8 }    // e.g. "art/icon-wildcard.png"
+  },
+
+  /* Opening video. Leave "" to jump straight to the title screen. */
+  intro: {
+    src: "art/Intro_Video_Test_05.mp4",                                    // e.g. "art/intro.mp4"
+    poster: "",                                 // optional still frame
+    muted: false                                // true = guaranteed autoplay, no sound
+  },
+
+  /* Looping background music. Leave "" for none. */
+  music: {
+    src: "art/Jazzy Christmas Groove EDIT.mp3",     // e.g. "art/music.mp3" or .ogg
+    volume: 0.3               // 0 = silent · 1 = full
+  },
+
+  /* One-shot played when a brief is completed. Leave "" for the synth jingle. */
+  briefSound: {
+    src: "art/ho_ho_ho_v2.mp3",
+    volume: 1
+  },
+
+  /* One-shot played when a power-up is awarded. Leave "" for the synth jingle. */
+  powerSound: {
+    src: "art/power-up-jingle-bells.mp3",
+    volume: 0.9
+  },
+
+  /* Plays when Santa catches a frozen present */
+  freezeSound: {
+    src: "art/freeze.mp3",
+    volume: 0.7
+  },
+
+  /* Plays when Santa thaws out */
+  thawSound: {
+    src: "art/thaw.mp3",
+    volume: 0.7
+  },
+
+  /* Plays while Santa has a sugar rush */
+  sugarSound: {
+    src: "art/sugar-rush-2.mp3",
+    volume: 0.5
+  },
+
+  /* Logo on the title screen, bottom-left. Leave "" to hide it. */
+  logo: {
+    src: "art/PR_logo.png",            // e.g. "art/logo.png"
+    width: 8,          // width in --u units (1 unit = 1% of stage width)
+    alt: "Logo"
+  }
+};
+
+/* ============================================================================
+   2 ·  GAME FEEL  —  safe to tweak
+   ============================================================================ */
+const CONFIG = {
+  santaWidth: 300, santaHeight: 280, santaSpeed: 2000,
+  itemSize: 130, marketingSize: 155,
+  baseFallSpeed: 540, maxFallSpeed: 1290,
+  rampScore: 350,     // points to reach full difficulty
+  rampCurve: 0.85,     // >1 = gentle early build · 1 = straight line · <1 = front-loaded
+  baseSpawnDelay: 0.85, minSpawnDelay: 0.35,
+  presentPoints: 1, goldPoints: 5, coalPenalty: 5, marketingPoints: 3,
+  maxMisses: 10,            // dropped presents before the game ends
+  missMarketing: false,     // true = missed brief items also count against you
+  marketingChance: 0.22,
+  coalChance: 0.14,
+  goldChance: 0.07,
+  frozenChance: 0.045,    // chance a drop is a frozen present
+  freezeSeconds: 1,      // how long Santa is frozen when caught
+  sugarChance: 0.055,    // chance a drop is a sugar rush present (rarer)
+  sugarSeconds: 4,       // how long the sugar rush lasts
+  sugarSpeedMult: 1.9,   // how much faster Santa moves during sugar rush
+  sugarUnlockScore: 100, // sugar presents don't start dropping until this score
+
+  /* --- milestones & power-ups --- */
+  milestoneEvery: 50,       // award a reward every N points
+  magnetSeconds: 6,
+  slowmoSeconds: 5,
+  slowmoFactor: 0.5,        // items fall at half speed during slow-mo
+  magnetPull: 520,          // px/sec items drift toward Santa
+  doubleSeconds: 10,
+  goldRushSeconds: 8,
+  goldRushChance: 0.45      // gold odds during a Golden Rush (normally 0.07)
+};
+
+/* ============================================================================
+   2b ·  MILESTONE REWARDS  —  cycles in order, one every CONFIG.milestoneEvery
+   ============================================================================ */
+const MILESTONES = [
+  { key:'magnet',   dur: CONFIG.magnetSeconds,   label:'Magnet Santa!',  color:'#ffd84d',
+    desc:'Presents curve toward your sack' },
+  { key:'slowmo',   dur: CONFIG.slowmoSeconds,   label:'Slow Motion!',   color:'#ffd84d',
+    desc:'Everything falls at half speed' },
+  { key:'life',     dur: 0,                      label:'Extra Life!',    color:'#ffd84d',
+    desc:'One more miss before game over' },
+  { key:'double',   dur: CONFIG.doubleSeconds,   label:'Double Points!', color:'#ffd84d',
+    desc:'Every catch is worth 2×' },
+  { key:'goldrush', dur: CONFIG.goldRushSeconds, label:'Gold Rush!',   color:'#ffd84d',
+    desc:'Big Ideas rain down' }
+];
+
+/* ============================================================================
+
+/* ============================================================================
+   3 ·  BRIEF CONTENT  —  add your own prompts freely
+       label    = what shows on the Creative Brief sheet
+       fragment = how it reads inside the generated sentence
+   ============================================================================ */
+const CATS = ["product", "audience", "platform", "tone", "wildcard"];
+const CAT_META = {
+  product:  { name: "Product",  icon: "🎁", color: "#e53935" },
+  audience: { name: "Audience", icon: "👥", color: "#1e88e5" },
+  platform: { name: "Platform", icon: "📺", color: "#8e24aa" },
+  tone:     { name: "Tone",     icon: "🎭", color: "#00897b" },
+  wildcard: { name: "Wildcard", icon: "✨", color: "#f9a825" }
+};
+
+const ICON_IMGS = {};
+CATS.forEach(cat => {
+  const img = new Image();
+  img.src = `art/icon-${cat}.png`;   // art/icon-product.png, etc.
+  ICON_IMGS[cat] = img;
+});
+
+/* Score icon — same art as the "Earn Points" card on the title screen */
+const SCORE_ICON = new Image();
+SCORE_ICON.src = 'art/earn-points.png';
+
+const PROMPTS = {
+  product: [
+    { label: "Ornament swap",     fragment: "ornament exchange" },
+    { label: "Gingerbread kit",   fragment: "gingerbread house kit" },
+    { label: "Advent calendar",   fragment: "advent calendar" },
+    { label: "Secret Santa app",  fragment: "Secret Santa app" },
+    { label: "Eggnog brand",      fragment: "eggnog brand" },
+    { label: "Tree farm",         fragment: "Christmas tree farm" },
+    { label: "Ugly sweater line", fragment: "ugly sweater line" },
+    { label: "Office party",      fragment: "office holiday party" },
+    { label: "Cookie box",        fragment: "cookie subscription box" },
+    { label: "Light display",     fragment: "holiday light display" }
+  ],
+  audience: [
+    { label: "Pet client",         fragment: "pet brand's" },
+    { label: "Tech client",      fragment: "tech brand's" },
+    { label: "Financial services client",   fragment: "financial service's" },
+    { label: "Healthcare client",            fragment: "healthcare client's" },
+    { label: "Fast food client",  fragment: "fast food chain's" },
+    { label: "Beauty product client",    fragment: "beauty product's" },
+    { label: "Retail client",    fragment: "retail client's" },
+    { label: "Consumer goods client", fragment: "consumer goods'" },
+    { label: "Nonprofits or charities",         fragment: "nonprofit or charity's" },
+    { label: "Sports entertainment client",    fragment: "sports team's" }
+  ],
+  platform: [
+    { label: "OOH billboard",     fragment: "billboard" },
+    { label: "TikTok",            fragment: "TikTok video" },
+    { label: "Podcast ad",        fragment: "podcast ad" },
+    { label: "YouTube ad",        fragment: "YouTube ad" },
+    { label: "In-store experience", fragment: "in-store experience" },
+    { label: "Email campaign",    fragment: "email campaign" },
+    { label: "Instagram reels",   fragment: "Instagram reel" },
+    { label: "Brand activation",  fragment: "brand activation" },
+    { label: "Radio spot",        fragment: "radio spot" },
+    { label: "TV spot",           fragment: "tv spot" }
+  ],
+  tone: [
+    { label: "Cozy",             fragment: "cozy" },
+    { label: "Jolly",            fragment: "jolly" },
+    { label: "Inspirational",    fragment: "inspirational" },
+    { label: "Nostalgic",        fragment: "nostalgic" },
+    { label: "Heartwarming",     fragment: "heartwarming" },
+    { label: "Humourous",        fragment: "humourous" },
+    { label: "Naughty",          fragment: "naughty" },
+    { label: "Over-the-top",     fragment: "over-the-top" },
+    { label: "Silly",            fragment: "silly" },
+    { label: "Dramatic",         fragment: "dramatic" }
+  ],
+  wildcard: [
+    { label: "Must rhyme",        fragment: "that rhymes like a carol" },
+    { label: "Emojis only",       fragment: "using only emojis" },
+    { label: "No Santa allowed",  fragment: "without mentioning Santa" },
+    { label: "No words at all",    fragment: "using no words at all" },
+    { label: "Two colors only",   fragment: "using only red and green" },
+    { label: "Includes Frosty the Snowman",      fragment: "that must include Frosty the Snowman" },
+    { label: "Sung, not spoken",  fragment: "that has to be sung, not spoken" },
+    { label: "Zero budget",       fragment: "on a budget of zero" },
+    { label: "Doesn't show product",     fragment: "that doesn't show the product" },
+    { label: "Use only 5 words", fragment: "using only 5 words" }
+  ]
+};
+
+function buildPromptSentence(b) {
+  const art = w => (/^[aeiou]/i.test(w) ? "an" : "a");
+  return `Create ${art(b.tone.fragment)} ${b.tone.fragment} ${b.platform.fragment} ` +
+         `for ${art(b.audience.fragment)} ${b.audience.fragment} ${b.product.fragment} ` +
+         `${b.wildcard.fragment}.`;
+}
+
+/* ============================================================================
+   4 ·  ENGINE
+   ============================================================================ */
+const stage  = document.getElementById('stage');
+const canvas = document.getElementById('game');
+const exitBtn = document.getElementById('exitBtn');
+const ctx    = canvas.getContext('2d');
+/* Canvas px kept clear at each end of the brief tray — score on the left,
+   Exit button on the right. Raise it and the five slots get narrower. */
+const TRAY_SIDE = 250;
+const W = canvas.width, H = canvas.height;   // 1920 x 1080 render space
+ctx.imageSmoothingQuality = 'high';
+
+function sizeStage() { stage.style.setProperty('--u', (stage.clientWidth / 100) + 'px'); }
+if (document.fonts) {
+  document.fonts.load('140px "Rancho"');
+  document.fonts.load('150px "Rancho"');
+}
+addEventListener('resize', sizeStage); sizeStage();
+
+function rr(x, y, w, h, r) {                 // rounded-rect helper
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else { ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+         ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+}
+
+/* Shrink a font until the text fits maxW (never below minPx). Sets ctx.font. */
+function fitFont(text, maxW, startPx, minPx, weight = 'bold ') {
+  let px = startPx;
+  ctx.font = `${weight}${px}px "Trebuchet MS", sans-serif`;
+  while (px > minPx && ctx.measureText(text).width > maxW) {
+    px -= 2;
+    ctx.font = `${weight}${px}px "Trebuchet MS", sans-serif`;
+  }
+  return px;
+}
+/* Last resort after fitFont — trim and ellipsise. Uses the current ctx.font. */
+function clipText(text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+/* Exit button is only live while a run is actually in progress. */
+let exitShown = false;
+function syncExit() {
+  const show = (state === 'play' || state === 'pause') && !quitConfirm;
+  if (show !== exitShown) { exitShown = show; exitBtn.classList.toggle('hidden', !show); }
+}
+
+class Sprite {
+  constructor(cfg = {}, fallback = null) {
+    this.img = null; this.frames = cfg.frames || 1; this.fps = cfg.fps || 8;
+    this.flip = !!cfg.flip; this.fallback = fallback;
+    if (cfg.src) { const i = new Image(); i.onload = () => this.img = i; i.src = cfg.src; }
+  }
+  draw(x, y, w, h, t = 0, flipX = false, rot = 0) {
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    if (rot) ctx.rotate(rot);
+    if (flipX && this.flip) ctx.scale(-1, 1);
+    ctx.translate(-w / 2, -h / 2);
+    if (this.img) {
+      const fw = this.img.width / this.frames;
+      const f = this.frames > 1 ? Math.floor(t * this.fps) % this.frames : 0;
+      ctx.drawImage(this.img, f * fw, 0, fw, this.img.height, 0, 0, w, h);
+    } else if (this.fallback) this.fallback(0, 0, w, h, t);
+    ctx.restore();
+  }
+}
+
+/* ---------- Placeholder art (used until you supply files) ---------- */
+const stars = Array.from({length:130}, () => ({x:Math.random()*W, y:Math.random()*H*.62, a:Math.random()*.8+.2}));
+const trees = Array.from({length:15}, (_,i) => ({x:i*140-40, w:150, h:170+Math.random()*140}));
+
+function fbBackground() {
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#09112f'); g.addColorStop(.55,'#1b2a5e'); g.addColorStop(1,'#43548f');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#fff8e1'; ctx.beginPath(); ctx.arc(W-230,170,78,0,7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  for (const s of stars) { ctx.globalAlpha = s.a; ctx.fillRect(s.x, s.y, 3, 3); }
+  ctx.globalAlpha = 1; ctx.fillStyle = '#14301f';
+  for (const t of trees) { ctx.beginPath(); ctx.moveTo(t.x,H-110);
+    ctx.lineTo(t.x+t.w/2, H-110-t.h); ctx.lineTo(t.x+t.w, H-110); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = '#f4f8ff'; ctx.beginPath(); ctx.moveTo(0,H); ctx.lineTo(0,H-130);
+  ctx.quadraticCurveTo(W*.3,H-195,W*.55,H-130); ctx.quadraticCurveTo(W*.8,H-70,W,H-145);
+  ctx.lineTo(W,H); ctx.closePath(); ctx.fill();
+}
+function fbSanta(x, y, w, h, t) {
+  const bob = Math.sin(t*6)*5; ctx.save(); ctx.translate(x, y+bob);
+  ctx.fillStyle='rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(w/2,h-8,w*.36,16,0,0,7); ctx.fill();
+  ctx.fillStyle='#8d6e3a'; ctx.beginPath(); ctx.moveTo(w*.12,h*.35);
+  ctx.quadraticCurveTo(w*.5,h*1.08,w*.88,h*.35); ctx.quadraticCurveTo(w*.5,h*.18,w*.12,h*.35); ctx.fill();
+  ctx.strokeStyle='#5d4524'; ctx.lineWidth=8; ctx.stroke();
+  ctx.fillStyle='#c62828'; ctx.beginPath(); ctx.ellipse(w*.5,h*.34,w*.19,h*.2,0,0,7); ctx.fill();
+  ctx.fillStyle='#ffe0b2'; ctx.beginPath(); ctx.arc(w*.5,h*.19,w*.11,0,7); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(w*.5,h*.25,w*.105,0,Math.PI); ctx.fill();
+  ctx.fillStyle='#c62828'; ctx.beginPath(); ctx.moveTo(w*.38,h*.13);
+  ctx.quadraticCurveTo(w*.52,h*-.07,w*.68,h*.06); ctx.lineTo(w*.62,h*.13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.fillRect(w*.37,h*.11,w*.27,h*.045);
+  ctx.beginPath(); ctx.arc(w*.69,h*.055,w*.035,0,7); ctx.fill();
+  ctx.restore();
+}
+function fbPresent(body, ribbon) {
+  return (x, y, w, h) => {
+    ctx.fillStyle = body; rr(x+w*.1, y+h*.28, w*.8, h*.64, w*.06); ctx.fill();
+    ctx.fillStyle = ribbon;
+    ctx.fillRect(x+w*.43, y+h*.28, w*.14, h*.64);
+    ctx.fillRect(x+w*.1,  y+h*.50, w*.8,  h*.12);
+    ctx.beginPath(); ctx.ellipse(x+w*.38,y+h*.25,w*.13,h*.1,0,0,7);
+    ctx.ellipse(x+w*.62,y+h*.25,w*.13,h*.1,0,0,7); ctx.fill();
+  };
+}
+function fbGold(x, y, w, h, t) {
+  ctx.save(); ctx.globalAlpha = .85 + Math.sin(t*8)*.15;
+  ctx.shadowColor = '#ffe082'; ctx.shadowBlur = 40;
+  fbPresent('#ffc107','#fff59d')(x,y,w,h); ctx.restore();
+  ctx.fillStyle='#fffde7'; ctx.font=`${w*.3}px serif`; ctx.textAlign='center';
+  ctx.fillText('✨', x+w*.5, y+h*.24);
+}
+function fbCoal(x, y, w, h) {
+  ctx.fillStyle='#6b6b6b'; ctx.beginPath();
+  ctx.moveTo(x+w*.2,y+h*.4); ctx.lineTo(x+w*.45,y+h*.18); ctx.lineTo(x+w*.8,y+h*.32);
+  ctx.lineTo(x+w*.88,y+h*.68); ctx.lineTo(x+w*.55,y+h*.88); ctx.lineTo(x+w*.18,y+h*.72);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#9a9a9a'; ctx.beginPath(); ctx.moveTo(x+w*.3,y+h*.42);
+  ctx.lineTo(x+w*.5,y+h*.3); ctx.lineTo(x+w*.6,y+h*.5); ctx.closePath(); ctx.fill();
+}
+function fbMarketing(cat) {
+  const m = CAT_META[cat];
+  return (x, y, w, h, t) => {
+    ctx.save(); ctx.shadowColor = m.color; ctx.shadowBlur = 26 + Math.sin(t*7)*10;
+    ctx.fillStyle = '#fffdf5'; rr(x+w*.1, y+h*.1, w*.8, h*.8, w*.14); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = m.color; rr(x+w*.1, y+h*.1, w*.8, h*.26, w*.14); ctx.fill();
+    ctx.fillRect(x+w*.1, y+h*.26, w*.8, h*.1);
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = `bold ${w*.13}px "Trebuchet MS", sans-serif`;
+    ctx.fillText(m.name.toUpperCase(), x+w*.5, y+h*.235);
+    const im = ICON_IMGS[cat];
+    if (im && im.complete && im.naturalWidth) {
+      const box = w*.5;                                   // target area (square)
+      const scale = Math.min(box/im.naturalWidth, box/im.naturalHeight);
+      const dw = im.naturalWidth*scale, dh = im.naturalHeight*scale;
+      ctx.drawImage(im, x+w*.5 - dw/2, y+h*.62 - dh/2, dw, dh);
+    } else {
+      ctx.font = `${w*.34}px serif`; ctx.fillText(m.icon, x+w*.5, y+h*.62);
+    }
+    ctx.textBaseline='alphabetic';
+  };
+}
+
+/* ---------- Sprite set ---------- */
+const PRESET = [['#e53935','#fff'], ['#43a047','#ffeb3b'], ['#1e88e5','#fff'], ['#8e24aa','#ffd54f']];
+const sprites = {
+  background:    new Sprite(ASSETS.background, fbBackground),
+  foreground:    new Sprite(ASSETS.foreground),
+  santa:         new Sprite(ASSETS.santa, fbSanta),
+  santaIdle:     new Sprite(ASSETS.santaIdle, fbSanta),
+  santaFrozen:   new Sprite(ASSETS.santaFrozen, fbSanta),
+  gold:          new Sprite(ASSETS.gold, fbGold),
+  coal:          new Sprite(ASSETS.coal, fbCoal),
+  frozenPresent: new Sprite(ASSETS.frozenPresent, fbPresent('#7fdbff','#ffffff')),
+  sugarPresent:  new Sprite(ASSETS.sugarPresent, fbPresent('#ff6ec7','#fff176')),
+  presents:      ASSETS.presents.map((c,i) => new Sprite(c, fbPresent(...PRESET[i % PRESET.length]))),
+  marketing:     Object.fromEntries(CATS.map(c => [c, new Sprite(ASSETS.marketing[c], fbMarketing(c))]))
+};
+
+/* ---------- Sound (synthesised, no files needed) ---------- */
+let audioCtx = null, muted = false;
+function beep(freq, dur = .12, type = 'sine', vol = .2) {
+  if (muted) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + dur);
+    o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+const sfx = {
+  present:  () => beep(880, .1, 'triangle'),
+  gold:     () => [1046,1318,1568].forEach((f,i) => setTimeout(() => beep(f,.12,'triangle'), i*70)),
+  coal:     () => beep(110, .32, 'sawtooth', .18),
+  market:   () => [660,990].forEach((f,i) => setTimeout(() => beep(f,.14,'square',.14), i*90)),
+  complete: () => [523,659,784,1046,1318].forEach((f,i) => setTimeout(() => beep(f,.22,'triangle',.22), i*110)),
+  milestone:() => [784,988,1175,1568].forEach((f,i) => setTimeout(() => beep(f,.18,'square',.16), i*80)),
+  best:     () => [1046,1318,1568,2093].forEach((f,i) => setTimeout(() => beep(f,.2,'triangle',.2), i*90)),
+  tick:     () => beep(420, .09, 'square', .25),       // deeper + louder regular tick
+  tickFinal:() => beep(620, .18, 'square', .6)         // deeper + louder final tick
+};
+
+/* ---------- Background music ---------- */
+const music = new Audio();
+if (ASSETS.music && ASSETS.music.src) {
+  music.src = ASSETS.music.src;
+  music.loop = true;
+  music.volume = ASSETS.music.volume ?? 0.5;
+}
+function startMusic() {
+  if (!music.src || muted) return;
+  const p = music.play();
+  if (p && p.catch) p.catch(() => {});   // autoplay blocked — a later click will start it
+}
+function syncMusic() {
+  if (!music.src) return;
+  if (muted) music.pause(); else startMusic();
+}
+
+/* ---------- Brief-complete one-shot ---------- */
+const hoHoHo = new Audio();
+if (ASSETS.briefSound && ASSETS.briefSound.src) {
+  hoHoHo.src = ASSETS.briefSound.src;
+  hoHoHo.volume = ASSETS.briefSound.volume ?? 0.2;
+  hoHoHo.preload = 'auto';
+}
+function playHoHoHo() {
+  if (muted || !hoHoHo.src) return;
+  const clip = hoHoHo.cloneNode();
+  clip.volume = hoHoHo.volume;
+  clip.play().catch(() => {});
+}
+
+/* ---------- Power-up one-shot ---------- */
+const powerUp = new Audio();
+if (ASSETS.powerSound && ASSETS.powerSound.src) {
+  powerUp.src = ASSETS.powerSound.src;
+  powerUp.volume = ASSETS.powerSound.volume ?? 0.7;
+  powerUp.preload = 'auto';
+}
+function playPowerUp() {
+  if (muted || !powerUp.src) return;
+  const clip = powerUp.cloneNode();
+  clip.volume = powerUp.volume;
+  clip.play().catch(() => {});
+}
+
+/* ---------- Freeze & thaw one-shots ---------- */
+const freezeSnd = new Audio();
+if (ASSETS.freezeSound && ASSETS.freezeSound.src) {
+  freezeSnd.src = ASSETS.freezeSound.src;
+  freezeSnd.volume = ASSETS.freezeSound.volume ?? 0.9;
+  freezeSnd.preload = 'auto';
+}
+function playFreeze() {
+  if (muted || !freezeSnd.src) return;
+  const clip = freezeSnd.cloneNode();
+  clip.volume = freezeSnd.volume;
+  clip.play().catch(() => {});
+}
+
+const thawSnd = new Audio();
+if (ASSETS.thawSound && ASSETS.thawSound.src) {
+  thawSnd.src = ASSETS.thawSound.src;
+  thawSnd.volume = ASSETS.thawSound.volume ?? 0.9;
+  thawSnd.preload = 'auto';
+}
+function playThaw() {
+  if (muted || !thawSnd.src) return;
+  const clip = thawSnd.cloneNode();
+  clip.volume = thawSnd.volume;
+  clip.play().catch(() => {});
+}
+
+/* ---------- Sugar rush loop (plays for the full duration) ---------- */
+const sugarSnd = new Audio();
+if (ASSETS.sugarSound && ASSETS.sugarSound.src) {
+  sugarSnd.src = ASSETS.sugarSound.src;
+  sugarSnd.volume = ASSETS.sugarSound.volume ?? 0.9;
+  sugarSnd.loop = true;
+  sugarSnd.preload = 'auto';
+}
+function startSugar() {
+  if (muted || !sugarSnd.src) return;
+  try { sugarSnd.currentTime = 0; } catch (e) {}
+  sugarSnd.play().catch(() => {});
+}
+function stopSugar() {
+  if (!sugarSnd.src) return;
+  sugarSnd.pause();
+  try { sugarSnd.currentTime = 0; } catch (e) {}
+}
+
+/* ---------- State ---------- */
+let state = 'video';             // video | title | play | pause | brief
+let score = 0, time = 0, spawnTimer = 0, shake = 0, briefCount = 0, misses = 0, grace = 0, frozen = 0, sugar = 0;
+let damageFlash = 0;   // 0–1, decays over ~0.5s for coal catches & missed presents
+let lifeBonus = 0, nextMilestone = CONFIG.milestoneEvery, milestoneIdx = 0, newBest = false;
+const power = { magnet: 0, slowmo: 0, double: 0, goldrush: 0 };   // seconds remaining
+const missLimit = () => CONFIG.maxMisses + lifeBonus;             // extra lives raise the cap
+let items = [], particles = [], floaters = [];
+let transcript = [];              // every delivered brief + the pitch the player typed
+const promptBag = {};             // shuffled pools we draw from so prompts don't repeat
+let best = +(localStorage.getItem('briefBuilderBest') || 0);
+const brief = { product:null, audience:null, platform:null, tone:null, wildcard:null };
+const santa = { x: W/2 - CONFIG.santaWidth/2, facingLeft:false, moving:false };
+const keys = {};
+
+const snow = Array.from({length:150}, () => ({
+  x: Math.random()*W, y: Math.random()*H, r: Math.random()*4+1.5,
+  s: Math.random()*55+28, w: Math.random()*2
+}));
+
+function shuffle(arr) {                                // Fisher–Yates
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function drawPrompt(cat) {
+  if (!promptBag[cat] || !promptBag[cat].length) promptBag[cat] = shuffle(PROMPTS[cat]);
+  return promptBag[cat].pop();
+}
+function resetGame() {
+  score = 0; misses = 0; items = []; particles = []; floaters = []; spawnTimer = .7;
+  CATS.forEach(c => brief[c] = null);
+  santa.x = W/2 - CONFIG.santaWidth/2; briefCount = 0;
+  lifeBonus = 0; nextMilestone = CONFIG.milestoneEvery; milestoneIdx = 0; newBest = false;
+  grace = 0; for (const k in power) power[k] = 0;
+  damageFlash = 0;
+  frozen = 0;
+  sugar = 0;
+  stopSugar();                                               // ← ADD THIS LINE
+  transcript = [];
+  CATS.forEach(c => promptBag[c] = shuffle(PROMPTS[c]));   // fresh shuffled deck per run
+}
+
+/* ---------- Input ---------- */
+addEventListener('keydown', e => {
+  /* Typing in the pitch box? Hand every key to the field and bail out. */
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'TEXTAREA' || tag === 'INPUT') {
+    if (e.key === 'Escape') e.target.blur();   // Esc once leaves the box, Esc again exits the brief
+    return;
+  }
+  const k = e.key.toLowerCase();
+
+  /* Quit popup open? Esc / Enter answer it, everything else is ignored. */
+  if (quitConfirm) {
+    if (k === 'escape') cancelQuit();
+    else if (k === 'enter') doQuit();
+    return;
+  }
+
+  keys[k] = true;
+  if (['arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if (k === 'm') { muted = !muted; syncMusic(); }
+  if (k === 'p' && (state === 'play' || state === 'pause')) state = state === 'play' ? 'pause' : 'play';
+  if (state === 'over' && (k === 'enter' || k === ' ')) {
+    document.getElementById('playAgainBtn').click(); return;
+  }
+  if (state === 'brief' && (k === 'enter' || k === ' ' || k === 'escape')) closeBrief();
+  else if (k === 'escape' && (state === 'play' || state === 'pause')) askQuit();
+});
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });  // drop stuck keys
+
+/* ---------- Difficulty ramp ----------
+   One 0→1 curve drives both fall speed and spawn density, so they rise
+   together instead of stacking into a spike. */
+function ramp() {
+  const t = Math.min(1, score / CONFIG.rampScore);
+  return Math.pow(t, CONFIG.rampCurve);
+}
+function fallSpeed() {
+  return CONFIG.baseFallSpeed + (CONFIG.maxFallSpeed - CONFIG.baseFallSpeed) * ramp();
+}
+function spawnDelay() {
+  return CONFIG.baseSpawnDelay - (CONFIG.baseSpawnDelay - CONFIG.minSpawnDelay) * ramp();
+}
+
+/* ---------- Spawning ---------- */
+function spawn() {
+  const missing = CATS.filter(c => !brief[c]);
+  const r = Math.random();
+  let type = 'present', cat = null;
+  const sugarUnlocked = score >= CONFIG.sugarUnlockScore;
+  const cMarket = CONFIG.marketingChance;
+  const cCoal   = cMarket + CONFIG.coalChance;
+  const cGold   = cCoal   + goldOdds();
+  const cFrozen = cGold   + CONFIG.frozenChance;
+  const cSugar  = cFrozen + (sugarUnlocked ? CONFIG.sugarChance : 0); 
+
+  if (missing.length && r < cMarket) {
+    type = 'marketing'; cat = missing[Math.floor(Math.random()*missing.length)];
+  } else if (r < cCoal)   type = 'coal';
+  else if   (r < cGold)   type = 'gold';
+  else if   (r < cFrozen) type = 'frozen';
+  else if   (r < cSugar)  type = 'sugar';
+
+  const size = type === 'marketing' ? CONFIG.marketingSize : CONFIG.itemSize;
+  const speed = fallSpeed();
+  items.push({
+    x: Math.random() * (W - size - 80) + 40, y: -size - Math.random()*120,
+    w: size, h: size, type, cat,
+    vy: speed * (type === 'marketing' ? .78 : 1) * (.85 + Math.random()*.3),
+    rot: (Math.random()-.5)*.25, spin: (Math.random()-.5)*(type === 'marketing' ? .5 : 1.1),
+    idx: Math.floor(Math.random()*sprites.presents.length)
+  });
+}
+function burst(x, y, color, n = 16) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random()*Math.PI*2, s = Math.random()*320+80;
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s-110, life:1, color });
+  }
+}
+function floatText(x, y, text, color, opts = {}) {
+  floaters.push({ x, y, text, color, life: 1, decay: opts.decay ?? 0.9, big: !!opts.big });
+}
+
+/* ---------- Milestones & power-ups ---------- */
+function goldOdds() { return power.goldrush > 0 ? CONFIG.goldRushChance : CONFIG.goldChance; }
+
+function awardMilestone(at) {
+  const m = MILESTONES[milestoneIdx % MILESTONES.length];
+  milestoneIdx++;
+  shake = .8;
+  if (powerUp.src) playPowerUp(); else sfx.milestone();
+  for (let i = 0; i < 3; i++) burst(W*(.25 + i*.25), H*.42, '255,216,77', 26);
+  floatText(W/2, H*.34, at + ' POINTS!', '#ffd84d');
+  floatText(W/2, H*.52, m.label, m.color, { big: true, decay: 0.32 });
+  if (m.key === 'life') lifeBonus++;          // raises your miss allowance by one
+  else power[m.key] = m.dur;
+}
+
+/* ---------- Update ---------- */
+function update(dt) {
+  time += dt;
+  for (const f of snow) {
+    f.y += f.s*dt; f.x += Math.sin(time + f.w*9)*22*dt;
+    if (f.y > H) { f.y = -10; f.x = Math.random()*W; }
+  }
+  particles = particles.filter(p => (p.life -= dt*1.6) > 0);
+  for (const p of particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 900*dt; }
+  floaters = floaters.filter(f => (f.life -= dt * f.decay) > 0);
+  for (const f of floaters) f.y -= 70*dt;
+  if (shake > 0) shake -= dt*3;
+  if (damageFlash > 0) damageFlash = Math.max(0, damageFlash - dt * 2.2);
+  if (state !== 'play') return;
+  if (grace > 0) grace -= dt;
+
+  /* Frozen countdown — triggers thaw sound the moment it hits zero */
+  if (frozen > 0) {
+    const prev = frozen;
+    frozen = Math.max(0, frozen - dt);
+    if (prev > 0 && frozen === 0) playThaw();
+    shake = Math.max(shake, 0.15);     // keep the screen rattling the whole freeze
+  }
+
+  /* Sugar rush countdown — stops the loop when it hits zero */
+  if (sugar > 0) {
+    const prev = sugar;
+    sugar = Math.max(0, sugar - dt);
+    if (prev > 0 && sugar === 0) stopSugar();
+  }
+
+  /* ← REPLACE the single power[k] line below with this whole block: */
+  /* Power-up countdown with 3-2-1 tick warning */
+  for (const k in power) {
+    if (power[k] <= 0) continue;
+    const prev = power[k];
+    power[k] = Math.max(0, prev - dt);
+    for (const threshold of [3, 2, 1]) {
+      if (prev > threshold && power[k] <= threshold && power[k] > 0) {
+        threshold === 1 ? sfx.tickFinal() : sfx.tick();
+      }
+    }
+  }
+
+  /* Santa */
+  let dir = 0;
+  if (frozen <= 0) {                                   // can't steer while frozen
+    if (keys['arrowleft'] || keys['a']) dir -= 1;
+    if (keys['arrowright'] || keys['d']) dir += 1;
+  }
+  const speed = CONFIG.santaSpeed * (sugar > 0 ? CONFIG.sugarSpeedMult : 1);
+  if (dir !== 0) { santa.x += dir * speed * dt; santa.facingLeft = dir < 0; }
+  santa.moving = dir !== 0;
+  santa.x = Math.max(0, Math.min(W - CONFIG.santaWidth, santa.x));
+
+  /* Spawn */
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawn();
+    spawnTimer = spawnDelay() * (.8 + Math.random()*.45);
+  }
+
+  /* Catch zone = mouth of the sack */
+  const sy = H - CONFIG.santaHeight - 14;
+  const zone = { x: santa.x + CONFIG.santaWidth*.12, y: sy + CONFIG.santaHeight*.28,
+                 w: CONFIG.santaWidth*.76, h: CONFIG.santaHeight*.48 };
+
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.y += it.vy * dt * (power.slowmo > 0 ? CONFIG.slowmoFactor : 1);
+    it.rot += it.spin*dt;
+    if (power.magnet > 0 && (it.type === 'present' || it.type === 'gold')) {
+      const tx = santa.x + CONFIG.santaWidth/2 - it.w/2;
+      const d  = tx - it.x;
+      it.x += Math.sign(d) * Math.min(Math.abs(d), CONFIG.magnetPull * dt);
+    }
+    const hit = it.x + it.w*.25 < zone.x + zone.w && it.x + it.w*.75 > zone.x &&
+                it.y + it.h*.8 > zone.y && it.y + it.h*.3 < zone.y + zone.h;
+    const cx = it.x + it.w/2, cy = it.y + it.h/2;
+
+    if (hit) {
+      items.splice(i, 1);
+      const mult = power.double > 0 ? 2 : 1;
+      if (it.type === 'coal') {
+        score = Math.max(0, score - CONFIG.coalPenalty); shake = 1; sfx.coal();
+        damageFlash = 1;
+        burst(cx, cy, '70,70,70', 22); floatText(cx, cy, `-${CONFIG.coalPenalty}`, '#ff6b6b');
+     } else if (it.type === 'frozen') {
+        frozen = CONFIG.freezeSeconds;
+        playFreeze();
+        burst(cx, cy, '150,220,255', 28);
+        floatText(W/2, H*.52, 'Freeze!', '#7fdbff', { big: true, decay: 0.32 });
+      } else if (it.type === 'sugar') {
+        sugar = CONFIG.sugarSeconds;
+        startSugar();
+        burst(cx, cy, '255,216,77', 28);
+        floatText(W/2, H*.52, 'Sugar Rush!', '#ffd84d', { big: true, decay: 0.24 });
+      } else if (it.type === 'gold') {
+        score += CONFIG.goldPoints * mult; sfx.gold();
+        burst(cx, cy, '255,215,0', 34);
+        floatText(cx, cy, `+${CONFIG.goldPoints * mult} BIG IDEA`, '#ffd84d');
+      } else if (it.type === 'marketing') {
+        if (!brief[it.cat]) {
+          brief[it.cat] = drawPrompt(it.cat);
+          score += CONFIG.marketingPoints * mult; sfx.market();
+          const m = CAT_META[it.cat];
+          burst(cx, cy, '255,255,255', 24);
+          floatText(cx, cy, `${m.name.toUpperCase()}: ${brief[it.cat].label}`, m.color);
+          if (CATS.every(c => brief[c])) openBrief();
+        }
+      } else {
+        score += CONFIG.presentPoints * mult; sfx.present();
+        burst(cx, cy, '255,255,255', 14);
+        floatText(cx, cy, `+${CONFIG.presentPoints * mult}`, mult > 1 ? '#ffd84d' : '#ffffff');
+      }
+      if (score > best) {
+        const hadBest = best > 0;
+        best = score; localStorage.setItem('briefBuilderBest', best);
+        if (hadBest && !newBest) {               // the moment you overtake your record
+          newBest = true; sfx.best(); shake = .6;
+          burst(W/2, H*.30, '255,216,77', 30);
+          floatText(W/2, H*.30, '🏆 NEW BEST!', '#ffd84d');
+        }
+      }
+      if (state === 'play') {                    // skip while a brief is opening — picked up in closeBrief
+        while (score >= nextMilestone) {
+          awardMilestone(nextMilestone);
+          nextMilestone += CONFIG.milestoneEvery;
+        }
+      }
+    } else if (it.y > H + 40) {
+      items.splice(i, 1);
+      const counts = it.type === 'present' || it.type === 'gold' ||
+                     (it.type === 'marketing' && CONFIG.missMarketing);
+      if (counts) {
+        misses++;
+        shake = .55; sfx.coal();
+        damageFlash = 1;                                              // ← ADD THIS LINE
+        floatText(cx, H - 160, `MISS ${misses}/${missLimit()}`, '#ff8a80');
+        if (misses >= missLimit()) { gameOver(); return; }
+      }
+    }
+  }
+}
+
+/* ---------- Draw ---------- */
+function drawHUD() {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.75)'; ctx.shadowBlur = 14;
+
+  /* Score — drops a size or two on its own, so 4 digits still clear the tray */
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+  const scoreTxt = String(score);
+  const iconSize = 64, iconGap = 14, iconX = 40, iconY = 32;
+  fitFont(scoreTxt, TRAY_SIDE - iconSize - iconGap - 16, 60, 34);
+  if (SCORE_ICON.complete && SCORE_ICON.naturalWidth) {
+    const scale = Math.min(iconSize / SCORE_ICON.naturalWidth,
+                           iconSize / SCORE_ICON.naturalHeight);
+    const dw = SCORE_ICON.naturalWidth * scale;
+    const dh = SCORE_ICON.naturalHeight * scale;
+    ctx.drawImage(SCORE_ICON, iconX + (iconSize - dw)/2,
+                              iconY + (iconSize - dh)/2, dw, dh);
+  }
+  ctx.fillText(scoreTxt, iconX + iconSize + iconGap, 84);
+  ctx.font = '28px "Trebuchet MS", sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.fillText('BEST ' + best + (muted ? '   🔇' : ''), 42, 126);
+
+  /* Missed presents */
+  const lim = missLimit(), left = lim - misses;
+  ctx.font = 'bold 34px "Trebuchet MS", sans-serif';
+  ctx.fillStyle = left <= 3 ? '#ff6b6b' : 'rgba(255,255,255,.9)';
+  ctx.fillText('MISSED  ' + misses + ' / ' + lim + (lifeBonus ? '  ❤️+' + lifeBonus : ''), 42, 180);
+
+  const bw = 300, bh = 14, by = 198;
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; rr(42, by, bw, bh, 7); ctx.fill();
+  ctx.fillStyle = left <= 3 ? '#e53935' : '#ffd84d';
+  rr(42, by, Math.max(0, bw * (misses / lim)), bh, 7); ctx.fill();
+
+  /* Active power-ups (with draining timer bars + urgent pulse in last 3s) */
+  ctx.shadowBlur = 0;
+  let py = by + 40;
+  for (const m of MILESTONES) {
+    if (m.dur <= 0 || power[m.key] <= 0) continue;
+    const pw = 300, ph = 34, fill = Math.max(0, pw * (power[m.key] / m.dur));
+    const urgent = power[m.key] <= 3;
+    const pulse = urgent ? (0.65 + 0.35 * Math.abs(Math.sin(power[m.key] * Math.PI))) : 1;
+
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; rr(42, py, pw, ph, 10); ctx.fill();
+    ctx.globalAlpha = urgent ? 0.55 * pulse : .38;
+    ctx.fillStyle = urgent ? '#ff6b6b' : m.color;
+    rr(42, py, fill, ph, Math.min(10, fill/2)); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = urgent ? '#ff8a80' : m.color;
+    ctx.font = 'bold 22px "Trebuchet MS", sans-serif';
+    ctx.fillText(m.label.replace('!',''), 56, py + 24);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = urgent ? `rgba(255,255,255,${pulse})` : 'rgba(255,255,255,.85)';
+    ctx.fillText(power[m.key].toFixed(1) + 's', 42 + pw - 14, py + 24);
+    py += ph + 8;
+  }
+
+  /* Next reward teaser */
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,.55)';
+  ctx.font = '22px "Trebuchet MS", sans-serif';
+  ctx.fillText('NEXT REWARD AT ' + nextMilestone, 42, py + 22);
+
+  /* Brief tray */
+  /* Brief tray — sized to fit between the score and the Exit button */
+  const gap = 14;
+  const slotW = Math.min(300, (W - TRAY_SIDE*2 - gap*(CATS.length-1)) / CATS.length);
+  const totalW = CATS.length*slotW + (CATS.length-1)*gap;
+  let x = (W - totalW)/2, y = 26, slotH = 92;
+  ctx.shadowBlur = 0;
+  for (const c of CATS) {
+    const m = CAT_META[c], got = brief[c];
+    ctx.globalAlpha = got ? 1 : .42;
+    ctx.fillStyle = got ? 'rgba(10,20,15,.82)' : 'rgba(0,0,0,.52)';
+    rr(x, y, slotW, slotH, 16); ctx.fill();
+    ctx.lineWidth = got ? 4 : 2;
+    ctx.strokeStyle = got ? m.color : 'rgba(255,255,255,.35)';
+    rr(x, y, slotW, slotH, 16); ctx.stroke();
+
+   const im = ICON_IMGS[c];
+    if (im && im.complete && im.naturalWidth) {
+      const box = 68;                                     // target area (square)
+      const scale = Math.min(box/im.naturalWidth, box/im.naturalHeight);
+      const dw = im.naturalWidth*scale, dh = im.naturalHeight*scale;
+      ctx.drawImage(im, x+12 + (box-dw)/2, y+12 + (box-dh)/2, dw, dh);   // centered in the 68×68 slot
+    } else {
+      ctx.font = '42px serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+      ctx.fillText(m.icon, x+46, y+62);
+    }
+
+    const tx = x + 88, tw = slotW - 88 - 14;     // text column inside the slot
+    ctx.textAlign = 'left';
+    ctx.fillStyle = m.color; ctx.font = 'bold 20px "Trebuchet MS", sans-serif';
+    ctx.fillText(m.name.toUpperCase(), tx, y+36);
+    ctx.fillStyle = got ? '#fff' : 'rgba(255,255,255,.5)';
+    const label = got ? got.label : '— — —';
+    fitFont(label, tw, 25, 17, got ? 'bold ' : '');
+    ctx.fillText(clipText(label, tw), tx, y+70);
+    ctx.globalAlpha = 1;
+    x += slotW + gap;
+  }
+  ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.62)';
+  ctx.font = '24px "Trebuchet MS", sans-serif';
+  ctx.fillText('COLLECT ALL FIVE TO UNLOCK A CREATIVE BRIEF', W/2, y + slotH + 36);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random()-.5)*shake*26, (Math.random()-.5)*shake*26);
+
+  if (sprites.background.img) ctx.drawImage(sprites.background.img, 0, 0, W, H);
+  else fbBackground();
+
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  for (const f of snow) { ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 7); ctx.fill(); }
+
+  for (const it of items) {
+    const sp = it.type === 'coal'      ? sprites.coal
+             : it.type === 'gold'      ? sprites.gold
+             : it.type === 'frozen'    ? sprites.frozenPresent
+             : it.type === 'sugar'     ? sprites.sugarPresent
+             : it.type === 'marketing' ? sprites.marketing[it.cat]
+             : sprites.presents[it.idx];
+    sp.draw(it.x, it.y, it.w, it.h, time, false, it.rot);
+  }
+
+  const santaSprite = frozen > 0  ? sprites.santaFrozen
+                    : santa.moving ? sprites.santa
+                    : sprites.santaIdle;
+  santaSprite.draw(santa.x, H - CONFIG.santaHeight - 14,
+                   CONFIG.santaWidth, CONFIG.santaHeight, time, santa.facingLeft);
+
+  /* --- foreground pass: everything below this line sits in front of Santa --- */
+  if (sprites.foreground.img) {
+    const px  = ASSETS.foreground.parallax || 0;
+    const off = px ? ((santa.x + CONFIG.santaWidth/2) / W - .5) * -2 * px : 0;
+    ctx.drawImage(sprites.foreground.img, off - Math.abs(px), 0, W + Math.abs(px)*2, H);
+  }
+
+  for (const p of particles) {
+    ctx.fillStyle = `rgba(${p.color},${Math.max(0,p.life)})`;
+    ctx.fillRect(p.x, p.y, 9, 9);
+  }
+  ctx.textAlign = 'center';
+  for (const f of floaters) {
+    ctx.font = f.big ? '150px "Rancho", cursive'
+                     : 'bold 38px "Trebuchet MS", sans-serif';
+    ctx.globalAlpha = Math.max(0, f.life);
+    ctx.fillStyle = f.color; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 14;
+    ctx.fillText(f.text, f.x, f.y); ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  /* Damage vignette — red edge flash on coal catches & missed presents */
+  if (damageFlash > 0) {                                              // ← ADD THIS BLOCK
+    const a = damageFlash;
+    const grad = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.28,
+                                          W/2, H/2, Math.max(W,H)*0.72);
+    grad.addColorStop(0, 'rgba(180,0,0,0)');
+    grad.addColorStop(0.65, `rgba(200,0,0,${a * 0.18})`);
+    grad.addColorStop(1, `rgba(255,30,30,${a * 0.65})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  /* Frozen vignette — icy blue edges while Santa is frozen */
+  if (frozen > 0) {
+    // Hold full intensity, then fade out over the last 0.6s
+    const a = Math.min(1, frozen / 0.3);
+    const pulse = 0.85 + 0.15 * Math.sin(time * 6);   // subtle shimmer
+    const grad = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.28,
+                                          W/2, H/2, Math.max(W,H)*0.72);
+    grad.addColorStop(0, 'rgba(120,200,255,0)');
+    grad.addColorStop(0.60, `rgba(120,200,255,${a * 0.22 * pulse})`);
+    grad.addColorStop(1,    `rgba(170,230,255,${a * 0.75 * pulse})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  if (state === 'play' || state === 'pause' || state === 'brief') drawHUD();
+
+  if (state === 'pause' && !quitConfirm) {
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#ffd84d'; ctx.font = '140px "Rancho", cursive';
+    ctx.textAlign = 'center'; ctx.fillText('Paused', W/2, H/2);
+    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '36px "Trebuchet MS", sans-serif';
+    ctx.fillText('Press P to resume', W/2, H/2 + 70);
+  }
+}
+
+/* ---------- Loop ---------- */
+let last = performance.now();
+(function loop(now) {
+  const dt = Math.min(.05, (now - last)/1000); last = now;
+  update(dt); syncExit(); draw(); requestAnimationFrame(loop);
+})(last);
+
+/* ============================================================================
+   5 ·  SCREEN FLOW:  video → title → play ⇄ brief
+   ============================================================================ */
+const videoLayer = document.getElementById('videoLayer');
+const titleLayer = document.getElementById('titleLayer');
+const briefLayer = document.getElementById('briefLayer');
+const video      = document.getElementById('introVideo');
+const gateBtn    = document.getElementById('gateBtn');
+
+function showTitle() {
+  state = 'title';
+  try { video.pause(); } catch (e) {}
+  videoLayer.classList.add('hidden');
+  briefLayer.classList.add('hidden');
+  overLayer.classList.add('hidden');
+  titleLayer.classList.remove('hidden');
+  startMusic();
+}
+function backToTitle() { showTitle(); }
+
+function startIntro() {
+  if (!ASSETS.intro.src) { showTitle(); return; }
+  video.src = ASSETS.intro.src;
+  if (ASSETS.intro.poster) video.poster = ASSETS.intro.poster;
+  video.muted = !!ASSETS.intro.muted;
+  video.onended = showTitle;
+  video.onerror = showTitle;
+  const p = video.play();
+  if (p && p.catch) p.catch(() => gateBtn.classList.remove('hidden'));  // autoplay blocked
+}
+gateBtn.onclick = () => { gateBtn.classList.add('hidden'); video.play(); };
+document.getElementById('skipBtn').onclick = showTitle;
+
+document.getElementById('startBtn').onclick = () => {
+  resetGame(); state = 'play';
+  titleLayer.classList.add('hidden');
+  startMusic();
+};
+
+/* ---------- Creative Brief screen ---------- */
+function openBrief() {
+  state = 'brief'; briefCount++;
+  if (hoHoHo.src) playHoHoHo(); else sfx.complete();
+  document.getElementById('briefNo').textContent =
+    'NO. ' + String(briefCount).padStart(3, '0');
+
+  document.getElementById('briefList').innerHTML = CATS.map(c => `
+    <li class="${c === 'wildcard' ? 'full' : ''}">
+      <span class="ic"><img src="art/icon-${c}.png" alt="" style="width:calc(var(--u)*1.9);height:calc(var(--u)*1.9);object-fit:contain;vertical-align:middle"></span>
+      <span class="k">${CAT_META[c].name}</span>
+      <span class="v">${brief[c].label}</span>
+    </li>`).join('');
+
+  const sentence = buildPromptSentence(brief);
+  document.getElementById('promptText').textContent = '“' + sentence + '”';
+
+  /* Log it now — the pitch gets attached when the player resumes. */
+  transcript.push({ no: briefCount, prompt: sentence, response: '' });
+
+  const pitch = document.getElementById('pitchInput');
+  pitch.value = '';
+  briefLayer.classList.remove('hidden');
+  setTimeout(() => pitch.focus(), 0);   // must run after the layer is visible or focus() is ignored
+}
+function closeBrief() {
+  const pitch = document.getElementById('pitchInput');
+  const entry = transcript[transcript.length - 1];
+  if (entry) entry.response = pitch.value.trim();   // blank is fine, it still gets listed
+  pitch.blur();                                     // so gameplay keys work again
+  briefLayer.classList.add('hidden');
+  CATS.forEach(c => brief[c] = null);        // reset ingredients for the next brief
+  items = [];                                // clear the screen so nothing lands instantly
+  grace = 0.5;                               // half-second breather before items fall again
+  spawnTimer = grace;                        // first new item waits out the grace period
+  floatText(W / 2, H * 0.4, 'Get Ready!', '#ffd84d');
+  state = 'play';
+  while (score >= nextMilestone) {           // any milestones hit during the brief fire now
+    awardMilestone(nextMilestone);
+    nextMilestone += CONFIG.milestoneEvery;
+  }
+}
+document.getElementById('resumeBtn').onclick = closeBrief;
+
+/* ---------- Game over ---------- */
+const overLayer = document.getElementById('overLayer');
+
+/* Player text goes into innerHTML, so neutralise anything that looks like markup. */
+const esc = s => String(s).replace(/[&<>"]/g,
+  c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+function renderRecap() {
+  const line = document.getElementById('recapLine');
+  const wrap = document.getElementById('recap');
+  const n = transcript.length;
+
+  if (!n) {
+    line.textContent = 'Santa didn’t get a brief to you this time. Collect all five items to unlock one!';
+    wrap.innerHTML = '';
+    wrap.classList.add('hidden');
+    return;
+  }
+
+  line.innerHTML = `Santa delivered <b>${n}</b> brief${n === 1 ? '' : 's'} to you!`;
+  wrap.classList.remove('hidden');
+  wrap.scrollTop = 0;
+  wrap.innerHTML = transcript.map(t => `
+    <div class="rcItem">
+      <div class="rcNo">NO. ${String(t.no).padStart(3, '0')}</div>
+      <div class="rcPrompt">“${esc(t.prompt)}”</div>
+      <div class="rcLbl">Your pitch</div>
+      <div class="rcResp${t.response ? '' : ' empty'}">${
+        t.response ? esc(t.response) : 'Left blank'
+      }</div>
+    </div>`).join('');
+}
+
+function gameOver(reason = 'missed') {
+  state = 'over';
+  briefLayer.classList.add('hidden');
+  if (score > best) { best = score; localStorage.setItem('briefBuilderBest', best); }
+
+  document.getElementById('overTitle').innerHTML = reason === 'quit'
+    ? "That's a wrap!"
+    : 'Oh no! You missed too <p>many presents!</p>';
+
+  document.getElementById('overSub').innerHTML =
+    `Final score <b>${score}</b><br>` +
+    (newBest ? `🏆 <b>NEW PERSONAL BEST!</b>` : `Best ever: <b>${best}</b> 🏆`);
+  renderRecap();
+  if (newBest) setTimeout(sfx.best, 300);
+
+  overLayer.classList.remove('hidden');
+  if (reason === 'quit') sfx.complete(); else sfx.coal();
+}
+
+document.getElementById('playAgainBtn').onclick = () => {
+  overLayer.classList.add('hidden');
+  resetGame();
+  state = 'play';
+};
+
+/* Quit early — confirm first, then the same summary screen */
+const confirmLayer = document.getElementById('confirmLayer');
+let quitConfirm = false, quitPrev = 'play';
+
+function askQuit() {
+  if (state !== 'play' && state !== 'pause') return;
+  quitPrev = state;                 // resume to wherever we were if cancelled
+  quitConfirm = true;
+  state = 'pause';                  // freeze the field behind the popup
+  confirmLayer.classList.remove('hidden');
+}
+function cancelQuit() {
+  if (!quitConfirm) return;
+  quitConfirm = false;
+  confirmLayer.classList.add('hidden');
+  state = quitPrev;
+}
+function doQuit() {
+  quitConfirm = false;
+  confirmLayer.classList.add('hidden');
+  gameOver('quit');
+}
+
+exitBtn.onclick = () => { exitBtn.blur(); askQuit(); };
+document.getElementById('cancelQuitBtn').onclick = cancelQuit;
+document.getElementById('confirmQuitBtn').onclick = doQuit;
+
+/* ---------- Build the title-screen icon row from ASSETS.marketing ---------- */
+document.getElementById('iconRow').innerHTML = CATS.map(c => {
+  const m = CAT_META[c];
+  const art = `<div class="art" style="background-image:url('art/icon-${c}.png');
+                 background-size:contain;background-position:center"></div>`;
+  return `<div class="it">${art}<div class="lbl" style="color:${m.color}">${m.name}</div></div>`;
+}).join('');
+
+/* ---------- Build the score-rewards row from MILESTONES ---------- */
+document.getElementById('rewardRow').innerHTML = MILESTONES.map((m, i) => {
+  const parts = m.label.split(' ');
+  const icon  = parts.shift();                      // leading emoji
+  const name  = parts.join(' ').replace('!', '');   // rest of the label
+  const at    = CONFIG.milestoneEvery * (i + 1);
+  return `<div class="rw" style="--c:${m.color}">
+            <div class="at">${at} PTS</div>
+            <div class="ic">${icon}</div>
+            <div class="nm">${name}</div>
+            <div class="ds">${m.desc}</div>
+          </div>`;
+}).join('');
+document.getElementById('rewardNote').textContent =
+  `…then the rewards cycle again every ${CONFIG.milestoneEvery} points.`;
+
+/* ---------- Title screen logo (auto-placed) ---------- */
+(function () {
+  const cfg = ASSETS.logo || {};
+  if (!cfg.src) return;
+
+  // The title screen is whatever element contains the Start button
+  const panel = document.getElementById('startBtn')?.parentElement;
+  if (!panel) return;
+
+  // Make sure the logo positions against the panel, not the page
+  if (getComputedStyle(panel).position === 'static') panel.style.position = 'relative';
+
+  const img = document.createElement('img');
+  img.id = 'logo';
+  img.src = cfg.src;
+  img.alt = cfg.alt || '';
+  img.style.width = `calc(var(--u) * ${cfg.width || 18})`;
+  panel.appendChild(img);
+})();
+
+startIntro();
+</script>
+</body>
+</html>
