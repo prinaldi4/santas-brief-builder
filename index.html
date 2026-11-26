@@ -1457,8 +1457,7 @@ function startIntro() {
   video.muted = !!ASSETS.intro.muted;
   video.onended = showTitle;
   video.onerror = showTitle;
-  const p = video.play();
-  if (p && p.catch) p.catch(() => gateBtn.classList.remove('hidden'));  // autoplay blocked
+  gateBtn.classList.remove('hidden');   // always show the Play button
 }
 gateBtn.onclick = () => { gateBtn.classList.add('hidden'); video.play(); };
 document.getElementById('skipBtn').onclick = showTitle;
