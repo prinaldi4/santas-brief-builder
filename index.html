@@ -36,6 +36,16 @@
   #overSub { font-size: calc(var(--u) * 1.9); }
   #overSub b { color: #ffd84d; font-size: calc(var(--u) * 2.4); }
 
+  /* Footer message — pinned to the bottom so it never pushes the button around */
+  #overFooter {
+    position: absolute; left: 0; right: 0; bottom: calc(var(--u) * 1);
+    text-align: center; pointer-events: none;
+    font-size: calc(var(--u) * 1.15); font-style: italic; line-height: 1.3;
+    color: rgba(255,255,255,.72);
+  }
+  #overFooter .sig { display: block; font-style: normal; letter-spacing: .06em;
+                     color: #ffd84d; margin-top: calc(var(--u) * .15); }
+
   #recapLine { color: #ffd84d; font-weight: bold; font-size: calc(var(--u) * 1.9); }
   #recap {
     width: min(calc(var(--u) * 74), 94%);
@@ -395,6 +405,10 @@
     <div id="recap" class="hidden"></div>
     <button id="playAgainBtn">Play Again</button>
     <p class="keys">Press Enter to play again</p>
+    <div id="overFooter">
+      “Wishing you a very, merry Christmas with your friends and family!”
+      <span class="sig">Sincerely, Paolo Rinaldi</span>
+    </div>
   </div>
 </div>
 
